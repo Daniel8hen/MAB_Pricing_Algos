@@ -250,7 +250,7 @@ def run_iteration():
 from datetime import datetime
 format = "%m/%d/%Y, %H:%M:%S"
 print("Start:", datetime.now().strftime(format))
-lst = Parallel(n_jobs=8)(run_iteration() for i in range(100))
+lst = Parallel(n_jobs=8)(run_iteration() for i in range(10000))
 best_regret, best_params = min(lst)
 if type(best_params)==str:
     best_params = eval(best_params)

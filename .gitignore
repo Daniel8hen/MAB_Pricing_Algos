@@ -5,6 +5,7 @@ __pycache__/
 
 # C extensions
 *.so
+# CSV
 *.csv
 
 # idea PyCharm

@@ -2,20 +2,15 @@
 # DBTITLE 1,Imports
 import numpy as np
 from copy import deepcopy as clone
-import matplotlib.pyplot as plt
 import pandas as pd
-from tqdm import tqdm
 import itertools
 import random
 
-
-# COMMAND ----------
-
-# DBTITLE 1,Interface model (ProbabilityModel) - each model that extends needs to have: predict_proba and partial_fit methods
+# Interface model (ProbabilityModel) - each model that extends needs to have: predict_proba and partial_fit methods
 class ProbabilityModel():
     def __init__(self):
-        self.class_prior = [0.5,
-                            0.5]  ### class_prior represents behavior without any data - [T, F] for True, False representation, should always sum to 1 when initiatlizaing
+        self.class_prior = [0.5, 0.5]  ### class_prior represents behavior without any data - [T, F] for True, False representation, should always sum to 1 when initiatlizaing
+        # TODO: can be = null (not used)
 
     def predict_proba(X):  # Sample
         raise NotImplementedError("not implemented")
@@ -24,9 +19,7 @@ class ProbabilityModel():
         raise NotImplementedError("not implemented")
 
 
-# COMMAND ----------
-
-# DBTITLE 1,BetaBernoulli - extends probability model, implements beta bernoulli
+# BetaBernoulli - extends probability model, implements beta bernoulli
 class BetaBernoulli(ProbabilityModel):  ### This class inheretes from ProbabilityModel
     """ This class is a representation of the BetaBernoulli distribution.
     This is one bandit."""
@@ -63,19 +56,11 @@ class BetaBernoulli(ProbabilityModel):  ### This class inheretes from Probabilit
         return np.array(ret)
 
 
-# COMMAND ----------
 
 class BiddingStrategy():
-    ### TODOs
-    ### 1. Make sure the technical part works well
-    ### 2. Once we are satisfied with this data, run on real data
-    ### 5. reward logic - go over it again
-    ### 6. Model - try a new model - maybe not this SGD Classifier??? - atm focusing on BetaBernoulli strategy
-    ### 7. Discounting - try add as well - for non-optimization models e.g. BetaBernoulli works well, for LogisticRegression can of course change parameters, so not working that well
-
-    ### This class represents few bandits
+    ### This class represents a collection of bandits
     def __init__(self, n_bins, max_bid, priors, classifier, desired_win_rate):
-        assert n_bins == len(priors)  # Just for saniyt
+        assert n_bins == len(priors)  # Just for sanity
 
         bins = np.linspace(0, max_bid, n_bins + 1)[1:]  # number of arms
         self.bid_model = {}  # dict of price: probability of it
@@ -100,7 +85,7 @@ class BiddingStrategy():
         """ This method will generate a bid based on a bidding strategy"""
         probabilities = [(model.predict_proba([context])[0][1]) for model in self.bid_model.values()]
         self.probabilities = probabilities
-        probabilities = self.aggregation_strategy(probabilities)  # So we will have the confidence per each arm
+        probabilities = self.normalize_probs(probabilities)  # So we will have the confidence per each arm
 
         assert len(probabilities) == len(self.bid_model.keys())
 
@@ -120,7 +105,6 @@ class BiddingStrategy():
         reward_arr = []
         for price in self.bid_model.keys():
             r = self.specific_reward(price, bid_price, won)
-            #         r = self.specific_reward_by_dict(price, bid_price, won)
             if r != 0:
                 for _ in range(abs(r)):
                     self.bid_model[price].partial_fit([context], [r > 0])
@@ -134,19 +118,24 @@ class BiddingStrategy():
             return -1
         return 0
 
-    def aggregation_strategy(self, arr):
+    def normalize_probs(self, arr):
         """This function calculates log on arr, then multiplies by 2 and deducts the min of that product
         Calculated as: 2*np.log(arr) - np.min(2*np.log(arr))
         On top of that, exponent and that is the returned value
         The goal is to have the highest value a very high value, and the lowest - 1"""
         arr = np.array(arr)
-        arr = 1 - np.abs(arr - self.desired_win_rate)
+        print("arr before games:", arr)
+        # arr = [0.5:1, 0.7:2, 0.18:3]
+        arr = np.abs(np.log(arr) - np.log(self.desired_win_rate)) # 1L1D
+        # The goal: The closer you are as a bandit to the win rate, meaning this bandit is more likely to be chosen
 
-        log_arr = np.log(arr)
-        normalized_log_arr = 2 * log_arr - np.min(2 * log_arr)
-        exp_norm_arr = np.exp(normalized_log_arr)
+        # log_arr = np.log(arr)
+        # normalized_log_arr = 2 * log_arr - np.min(2 * log_arr)
+        exp_norm_arr = np.exp(arr)
         exp_norm_arr /= exp_norm_arr.sum()
 
+        print(exp_norm_arr)
+        print("\n")
         return exp_norm_arr
 
     def simulate_by_constant(self, constant, discount_perc, n_iteration=100, noise=2):
@@ -218,7 +207,7 @@ def run_iteration():
     for comb in itertools.product(range(1, max_data_point + 1), [-2, -1, 1, 2], [True, False]):
         reward_dict[comb] = random.choice(penalties)
     biddingStrategy = BiddingStrategy(n_bins=max_data_point, max_bid=max_data_point, priors=range(max_data_point),
-                                      classifier=cls, desired_win_rate=0.5)
+                                      classifier=cls, desired_win_rate=0.6)
     regret = biddingStrategy.simulate_by_constant(4, 0.99)
     return regret, reward_dict
 
@@ -227,7 +216,7 @@ from datetime import datetime
 
 format = "%m/%d/%Y, %H:%M:%S"
 print("Start:", datetime.now().strftime(format))
-lst = Parallel(n_jobs=8)(run_iteration() for i in range(100))
+lst = Parallel(n_jobs=8)(run_iteration() for i in range(1000))
 best_regret, best_params = min(lst)
 print("Best Regret:", best_regret)
 # print("best params:", best_params)
