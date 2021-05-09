@@ -215,3 +215,8 @@ biddingStrategy = BiddingStrategy(n_bins=n_bins, max_bid=max_data_point, priors=
 # regret = biddingStrategy.simulate_by_constant(4, 0.99)
 regret = biddingStrategy.simulate_by_real_dataset(df.head(2000), 0.99)
 print("Regret:", regret)
+
+### General TODOs:
+# 1. Plotting each aspect of pricing here so we can see how the model is learning
+# 2. No context - making it work by heavily debugging
+# 3. With context? Adding it may help
