@@ -189,7 +189,7 @@ class BiddingStrategy():
 
             self.discount(discount_perc) # discount
 
-        r = self.reward(bid_price=b, won=win, context=[1]) # Generate reward per auction fin.
+            r = self.reward(bid_price=b, won=win, context=[1]) # Generate reward per auction fin.
 
         return np.mean(np.array(regret_arr))
 

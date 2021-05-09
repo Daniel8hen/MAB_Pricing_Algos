@@ -133,8 +133,6 @@ class BiddingStrategy():
         exp_norm_arr = np.exp(arr)
         exp_norm_arr /= exp_norm_arr.sum()
 
-        print(exp_norm_arr)
-
         return exp_norm_arr
 
     def simulate_by_constant(self, constant, discount_perc, n_iteration=100, noise=2):
@@ -147,10 +145,9 @@ class BiddingStrategy():
             win = b > auction_bid
 
             regret_arr.append(np.abs(b - auction_bid)) # log regret: ABS(bid - constant, which is the "win price by default")
-
             self.discount(discount_perc) # discount
+            r = self.reward(bid_price=b, won=win, context=[1])  # Generate reward per auction fin.
 
-        r = self.reward(bid_price=b, won=win, context=[1])  # Generate reward per auction fin.
 
         return np.mean(np.array(regret_arr))
 

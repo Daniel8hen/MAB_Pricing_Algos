@@ -149,33 +149,24 @@ class BiddingStrategy():
             regret_arr.append(np.abs(b - auction_bid)) # log regret: ABS(bid - constant, which is the "win price by default")
 
             self.discount(discount_perc) # discount
+            r = self.reward(bid_price=b, won=win, context=[1])  # Generate reward per auction fin.
 
         return np.mean(np.array(regret_arr))
 
 
-    def simulate_by_real_dataset(self, constant, discount_perc, n_iteration=100, noise=2):
+    def simulate_by_real_dataset(self, df, discount_perc):
         """Going to simulate by real df"""
         regret_arr = []
 
         for i, row in df.iterrows():
             b = self.bid([i])  # provide a bid
 
-            auction_bid = df['bidPrice']
-            print("Auction bid is:", auction_bid)
+            auction_bid = row['bidPrice']
             win = b > auction_bid
-            print("bid is:", b)
-            print("Have we won?", win)
 
             regret_arr.append(np.abs(b - auction_bid))  # log regret: ABS(bid - constant, which is the "win price by default")
-
-            break
-
-
-
-        self.discount(discount_perc) # discount
-
-        r = self.reward(bid_price=b, won=win, context=[1])  # Generate reward per auction fin.
-
+            self.discount(discount_perc)  # discount
+            r = self.reward(bid_price=b, won=win, context=[1])  # Generate reward per auction fin.
         return np.mean(np.array(regret_arr))
 
 #       def specific_reward_function(self, bandit_price, bid_price, won):
@@ -214,18 +205,13 @@ cls = BetaBernoulli(1, 1000)  # Defining an instance of this BetaBernoulli with 
 
 df = pd.read_csv("data/data.csv")
 df = df.query("placementType == 'banner'")
-max_data_point = 10  # max number of bins
-best_regret = 100
-print(df.head())
-@delayed
-def run_iteration():
-    biddingStrategy = BiddingStrategy(n_bins=max_data_point, max_bid=max_data_point, priors=range(max_data_point),
-                                      classifier=cls, desired_win_rate=0.6)
-    regret = biddingStrategy.simulate_by_constant(4, 0.99)
-    return regret
+max_data_point = 1  # max number of bins
+n_bins=10
 
 format = "%m/%d/%Y, %H:%M:%S"
 print("Start:", datetime.now().strftime(format))
-lst = Parallel(n_jobs=8)(run_iteration() for i in range(1000))
-best_regret = min(lst)
-print("Best Regret:", best_regret)
+biddingStrategy = BiddingStrategy(n_bins=n_bins, max_bid=max_data_point, priors=[1]*n_bins,
+                                  classifier=cls, desired_win_rate=0.6)
+# regret = biddingStrategy.simulate_by_constant(4, 0.99)
+regret = biddingStrategy.simulate_by_real_dataset(df.head(2000), 0.99)
+print("Regret:", regret)
