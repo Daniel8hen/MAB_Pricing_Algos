@@ -124,9 +124,8 @@ class BiddingStrategy():
         On top of that, exponent and that is the returned value
         The goal is to have the highest value a very high value, and the lowest - 1"""
         arr = np.array(arr)
-        print("arr before games:", arr)
-        # arr = [0.5:1, 0.7:2, 0.18:3]
         arr = np.abs(np.log(arr) - np.log(self.desired_win_rate)) # 1L1D
+        arr = arr - np.min(arr)
         # The goal: The closer you are as a bandit to the win rate, meaning this bandit is more likely to be chosen
 
         # log_arr = np.log(arr)
@@ -135,7 +134,7 @@ class BiddingStrategy():
         exp_norm_arr /= exp_norm_arr.sum()
 
         print(exp_norm_arr)
-        print("\n")
+
         return exp_norm_arr
 
     def simulate_by_constant(self, constant, discount_perc, n_iteration=100, noise=2):
