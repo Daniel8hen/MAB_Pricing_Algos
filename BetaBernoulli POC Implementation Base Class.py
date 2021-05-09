@@ -185,9 +185,9 @@ class BiddingStrategy():
             auction_bid = constant + (random.random() - 0.5) * 2 * noise
             win = b > auction_bid
 
-        regret_arr.append(np.abs(b - auction_bid)) # log regret: ABS(bid - constant, which is the "win price by default")
+            regret_arr.append(np.abs(b - auction_bid)) # log regret: ABS(bid - constant, which is the "win price by default")
 
-        self.discount(discount_perc) # discount
+            self.discount(discount_perc) # discount
 
         r = self.reward(bid_price=b, won=win, context=[1]) # Generate reward per auction fin.
 
@@ -250,7 +250,7 @@ def run_iteration():
 from datetime import datetime
 format = "%m/%d/%Y, %H:%M:%S"
 print("Start:", datetime.now().strftime(format))
-lst = Parallel(n_jobs=8)(run_iteration() for i in range(10000))
+lst = Parallel(n_jobs=8)(run_iteration() for i in range(1000))
 best_regret, best_params = min(lst)
 if type(best_params)==str:
     best_params = eval(best_params)
