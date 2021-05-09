@@ -8,37 +8,39 @@ from tqdm import tqdm
 import itertools
 import random
 
+
 # COMMAND ----------
 
 # DBTITLE 1,Interface model (ProbabilityModel) - each model that extends needs to have: predict_proba and partial_fit methods
 class ProbabilityModel():
-  def __init__(self):
-    self.class_prior = [0.5,0.5] ### class_prior represents behavior without any data - [T, F] for True, False representation, should always sum to 1 when initiatlizaing
-    
-  def predict_proba(X): # Sample
-    raise NotImplementedError("not implemented")
-    
-  def partial_fit(X, y): # Update
-    raise NotImplementedError("not implemented")
+    def __init__(self):
+        self.class_prior = [0.5,
+                            0.5]  ### class_prior represents behavior without any data - [T, F] for True, False representation, should always sum to 1 when initiatlizaing
+
+    def predict_proba(X):  # Sample
+        raise NotImplementedError("not implemented")
+
+    def partial_fit(X, y):  # Update
+        raise NotImplementedError("not implemented")
+
 
 # COMMAND ----------
 
 # DBTITLE 1,BetaBernoulli - extends probability model, implements beta bernoulli
-class BetaBernoulli(ProbabilityModel): ### This class inheretes from ProbabilityModel
+class BetaBernoulli(ProbabilityModel):  ### This class inheretes from ProbabilityModel
     """ This class is a representation of the BetaBernoulli distribution.
     This is one bandit."""
     __slots__ = ["T", "F", "prior_T", "prior_F"]
 
     def __init__(self, T, F):
-        self.prior_T = T # True cases - What we assume the distribution is when there is no data
-        self.prior_F = F # False cases - What we assume the distribution is when there is no data
+        self.prior_T = T  # True cases - What we assume the distribution is when there is no data
+        self.prior_F = F  # False cases - What we assume the distribution is when there is no data
         self.T = T
         self.F = F
 
-    
     def fit(self, X, y):
         return self
-    
+
     def partial_fit(self, X, y):
         # In case of Win / Lose, let's update our prior belief accordingly.
         y = np.array(y)
@@ -48,133 +50,104 @@ class BetaBernoulli(ProbabilityModel): ### This class inheretes from Probability
 
     def discount(self, r):
         # Let's update our True / False accordingly with r rate, while multiplying with a number
-        self.T = (self.T+r*self.prior_T)/(1+r)
-        self.F = (self.F+r*self.prior_F)/(1+r)
+        self.T = (self.T + r * self.prior_T) / (1 + r)
+        self.F = (self.F + r * self.prior_F) / (1 + r)
         return self
-    
+
     def predict_proba(self, X):
         # sample out of the beta distribution. This is the posterior
         ret = []
         for _ in range(len(X)):
-          p = np.random.beta(self.T, self.F)
-          ret.append([1-p, p])
+            p = np.random.beta(self.T, self.F)
+            ret.append([1 - p, p])
         return np.array(ret)
+
 
 # COMMAND ----------
 
 class BiddingStrategy():
-### TODOs
-### 1. Make sure the technical part works well
-### 2. Once we are satisfied with this data, run on real data
-### 5. reward logic - go over it again
-### 6. Model - try a new model - maybe not this SGD Classifier??? - atm focusing on BetaBernoulli strategy
-### 7. Discounting - try add as well - for non-optimization models e.g. BetaBernoulli works well, for LogisticRegression can of course change parameters, so not working that well
+    ### TODOs
+    ### 1. Make sure the technical part works well
+    ### 2. Once we are satisfied with this data, run on real data
+    ### 5. reward logic - go over it again
+    ### 6. Model - try a new model - maybe not this SGD Classifier??? - atm focusing on BetaBernoulli strategy
+    ### 7. Discounting - try add as well - for non-optimization models e.g. BetaBernoulli works well, for LogisticRegression can of course change parameters, so not working that well
 
-  ### This class represents few bandits
-    def __init__(self, n_bins, max_bid, priors, classifier, reward_dict):
-        assert n_bins == len(priors) # Just for saniyt
-        
-        bins = np.linspace(0,max_bid,n_bins+1)[1:] # number of arms
-        self.bid_model = {} # dict of price: probability of it
+    ### This class represents few bandits
+    def __init__(self, n_bins, max_bid, priors, classifier, desired_win_rate):
+        assert n_bins == len(priors)  # Just for saniyt
+
+        bins = np.linspace(0, max_bid, n_bins + 1)[1:]  # number of arms
+        self.bid_model = {}  # dict of price: probability of it
         for b, p in zip(bins, priors):
-            self.bid_model[b] = clone(classifier)  
-            
-        self.reward_dict = reward_dict
-    
+            self.bid_model[b] = clone(classifier)
+
+        self.desired_win_rate = desired_win_rate
+
     def discount(self, r):
         """per each of the arms that based on this, run discount mechanism
         The goal of discount is to lower the confidence of each model, such that it will be based on "more recent" data, thus it can learn."""
         for model in self.bid_model.values():
-          model.discount(r)
+            model.discount(r)
         return self
-            
+
     def parameters(self):
-      """BetaBernoulli based - parameters of the model: alpha + beta"""
-      """TODO: Generalize for general models"""
-      return {price: model.T / (model.T + model.F) for price, model in self.bid_model.items()}
+        """BetaBernoulli based - parameters of the model: alpha + beta"""
+        """TODO: Generalize for general models"""
+        return {price: model.T / (model.T + model.F) for price, model in self.bid_model.items()}
 
     def bid(self, context):
-      """ This method will generate a bid based on a bidding strategy"""
-      probabilities = [(model.predict_proba([context])[0][1]) for model in self.bid_model.values()]
-      self.probabilities = probabilities
-      probabilities = self.aggregation_strategy(probabilities) # So we will have the confidence per each arm
+        """ This method will generate a bid based on a bidding strategy"""
+        probabilities = [(model.predict_proba([context])[0][1]) for model in self.bid_model.values()]
+        self.probabilities = probabilities
+        probabilities = self.aggregation_strategy(probabilities)  # So we will have the confidence per each arm
 
-      assert len(probabilities) == len(self.bid_model.keys())
+        assert len(probabilities) == len(self.bid_model.keys())
 
-      n_samples = 3 # Aggregation strategy
-      bid_price = np.random.choice(a=list(self.bid_model.keys()), p=probabilities, size=n_samples).mean()
-      # bid price is based on 3 sampling average from the probabilities model
+        n_samples = 3  # Aggregation strategy
+        bid_price = np.random.choice(a=list(self.bid_model.keys()), p=probabilities, size=n_samples).mean()
+        # bid price is based on 3 sampling average from the probabilities model
 
-      return bid_price
+        return bid_price
 
     def reward(self, bid_price, won, context):
-      """Represents the reward that will be given per each one of the bandits, negative / positive
-      # params: 
-      # bid_price : bid price that our "agent" got out with
-      # context: mapping: 1 - X between our world: e.g. dnt=true, os=android, ... then 1, dnt=false, os =android then 2, etc - this is the weak thing in beta bernoulli, as we need to create this mapping based on our logic - e.g. only for placementType, placementType + dnt, ...
-      # won - True / False for win / lose in auction"""
+        """Represents the reward that will be given per each one of the bandits, negative / positive
+        # params:
+        # bid_price : bid price that our "agent" got out with
+        # context: mapping: 1 - X between our world: e.g. dnt=true, os=android, ... then 1, dnt=false, os =android then 2, etc - this is the weak thing in beta bernoulli, as we need to create this mapping based on our logic - e.g. only for placementType, placementType + dnt, ...
+        # won - True / False for win / lose in auction"""
 
-      reward_arr=[]
-      for price in self.bid_model.keys():
-#         r = self.specific_reward_by_dict(price, bid_price, won, interval_size=4, max_reward_on_win=1, max_reward_on_lose=8, lower_bound_price=10)
-        r = self.specific_reward_by_dict(price, bid_price, won)
-        if r !=0:
-          for _ in range(abs(r)):
-            self.bid_model[price].partial_fit([context], [r>0])
-        reward_arr.append(r)
-      return reward_arr
+        reward_arr = []
+        for price in self.bid_model.keys():
+            r = self.specific_reward(price, bid_price, won)
+            #         r = self.specific_reward_by_dict(price, bid_price, won)
+            if r != 0:
+                for _ in range(abs(r)):
+                    self.bid_model[price].partial_fit([context], [r > 0])
+            reward_arr.append(r)
+        return reward_arr
 
-    def specific_reward_function(self, bandit_price, bid_price, won, interval_size, max_reward_on_win, max_reward_on_lose, lower_bound_price):
-      ###TODO: Fix this method, not working well at the moment April 22nd!
-        """This method will update per each bandit its reward based on similiarity logic (how close were they to win / lose)
-        Params: diff = bid price (that was in the auction) - bandit price (that we are on)"""
-        upper_bound_price=interval_size
-
-        diff = bid_price - bandit_price
-        y=0
-
-        if (diff <= interval_size):  
-          if won:
-            y=max(0,round(-max_reward_on_win*diff/lower_bound_price + max_reward_on_win))
-          else: #lose
-            y=-max_reward_on_lose * diff * (diff - upper_bound_price)
-            y=max(0,round(y))
-        else:
-          if won and diff>0:
-            y= -1
-          if not won and diff<0:
-            y= -1
-
-        return int(y)
-
-    def specific_reward_by_dict(self, bandit_price, bid_price, won):
-      """This method generate a reward based on bid price, bandit price, won events, stored in a reward_dictionary outside"""
-      if 0 < bid_price - bandit_price <= 2:
-        diff = 1
-      elif -2 < bid_price - bandit_price <= 0:
-        diff = -1
-      elif bid_price - bandit_price > 2:
-        diff = 2
-      else:
-        diff = -2
-        
-#       diff = (bid_price - bandit_price) > 0 # Boolean flag
-      return int(self.reward_dict.get((bid_price, diff, won), 0))
+    def specific_reward(self, bandit_price, bid_price, won):
+        if won and bandit_price >= bid_price:
+            return 1
+        if (not won) and bandit_price <= bid_price:
+            return -1
+        return 0
 
     def aggregation_strategy(self, arr):
-      """This function calculates log on arr, then multiplies by 2 and deducts the min of that product
-      Calculated as: 2*np.log(arr) - np.min(2*np.log(arr))
-      On top of that, exponent and that is the returned value
-      The goal is to have the highest value a very high value, and the lowest - 1"""
+        """This function calculates log on arr, then multiplies by 2 and deducts the min of that product
+        Calculated as: 2*np.log(arr) - np.min(2*np.log(arr))
+        On top of that, exponent and that is the returned value
+        The goal is to have the highest value a very high value, and the lowest - 1"""
+        arr = np.array(arr)
+        arr = 1 - np.abs(arr - self.desired_win_rate)
 
-      arr = np.array(arr)
-      log_arr = np.log(arr)
-      normalized_log_arr = 2*log_arr - np.min(2*log_arr)
-      exp_norm_arr = np.exp(normalized_log_arr)
-      exp_norm_arr/=exp_norm_arr.sum()
+        log_arr = np.log(arr)
+        normalized_log_arr = 2 * log_arr - np.min(2 * log_arr)
+        exp_norm_arr = np.exp(normalized_log_arr)
+        exp_norm_arr /= exp_norm_arr.sum()
 
-      return exp_norm_arr
-
+        return exp_norm_arr
 
     def simulate_by_constant(self, constant, discount_perc, n_iteration=100, noise=2):
         """Going to simulate"""
@@ -182,18 +155,20 @@ class BiddingStrategy():
 
         for i in range(1, n_iteration):
             b = self.bid([i])  # provide a bid
-            auction_bid = constant + (random.random() - 0.5) * 2 * noise
+            auction_bid = constant + (random.random() - 0.5) *2* noise
             win = b > auction_bid
 
         regret_arr.append(np.abs(b - auction_bid)) # log regret: ABS(bid - constant, which is the "win price by default")
 
         self.discount(discount_perc) # discount
 
-        r = self.reward(bid_price=b, won=win, context=[1]) # Generate reward per auction fin.
+        r = self.reward(bid_price=b, won=win, context=[1])  # Generate reward per auction fin.
 
         return np.mean(np.array(regret_arr))
 
     # TODO: We want a negative reward
+
+
 #       def specific_reward_function(self, bandit_price, bid_price, won):
 #         """This method will update per each bandit its reward based on similiarity logic (how close were they to win / lose)"""
 #           # TODO: This should be decided
@@ -216,51 +191,51 @@ class BiddingStrategy():
 #             elif diff < 0 and diff >= -2:
 #               return 1
 #             else:
-#               return 0   
+#               return 0
 
 # COMMAND ----------
 
-cls = BetaBernoulli(1, 1000) # Defining an instance of this BetaBernoulli with 1 win, 1000 loses as our prior
+cls = BetaBernoulli(1, 1000)  # Defining an instance of this BetaBernoulli with 1 win, 1000 loses as our prior
 
 # COMMAND ----------
 
 # COMMAND ----------
 
 reward_dict = {}
-max_data_point = 10 # max number of bins
+max_data_point = 10  # max number of bins
 best_regret = 100
 best_params = {}
-penalties = [-1000,-1,0,10,1000] #TODO: try to think on functions / many distinct values -
+penalties = [-1000, -1, 0, 10, 1000]  # TODO: try to think on functions / many distinct values -
 
-# TODO: 
+# TODO:
 # (1) joblib - multiprocessing https://joblib.readthedocs.io/en/latest/parallel.html for the below
 # (2):
 from joblib import delayed, Parallel
+
 
 @delayed
 def run_iteration():
     for comb in itertools.product(range(1, max_data_point + 1), [-2, -1, 1, 2], [True, False]):
         reward_dict[comb] = random.choice(penalties)
     biddingStrategy = BiddingStrategy(n_bins=max_data_point, max_bid=max_data_point, priors=range(max_data_point),
-                                      classifier=cls, reward_dict=reward_dict)
+                                      classifier=cls, desired_win_rate=0.5)
     regret = biddingStrategy.simulate_by_constant(4, 0.99)
-    return regret, repr(reward_dict)
+    return regret, reward_dict
 
 
 from datetime import datetime
+
 format = "%m/%d/%Y, %H:%M:%S"
 print("Start:", datetime.now().strftime(format))
 lst = Parallel(n_jobs=8)(run_iteration() for i in range(100))
 best_regret, best_params = min(lst)
-if type(best_params)==str:
-    best_params = eval(best_params)
 print("Best Regret:", best_regret)
 # print("best params:", best_params)
 reward_arr = []
 for k, v in best_params.items():
     reward_arr.append((k[0], k[1], k[2], v))
 pandas_best_params = pd.DataFrame(reward_arr, columns=["bandit_price", "diff", "won", "reward"]).astype(int)
-pandas_best_params.to_csv("output.csv",index=None)
+pandas_best_params.to_csv("output.csv", index=None)
 print("End:", datetime.now().strftime(format))
 
 # COMMAND ----------
@@ -293,22 +268,19 @@ best_params
 #       """This method generate a reward based on bid price, bandit price, won events, stored in a reward_dictionary outside"""
 #       diff = (bid_price - bandit_price) > 0 # Boolean flag
 #       return int(self.reward_dict.get(bid_price, diff, won), 0)
-    
-
 
 
 # COMMAND ----------
 
 
-
 # dummy_X = np.random.randint(low=1, high=max_data_point, size=(10,1)) # Dummy data - represents the bids that were in many auctions
-#print(dummy_X) # e.g. 3 = banner, dntTrue, iOS
+# print(dummy_X) # e.g. 3 = banner, dntTrue, iOS
 
-# dummy_bids = np.random.randint(low=1, high=max_data_point, size=(10,)) # 
-#print(dummy_bids)
+# dummy_bids = np.random.randint(low=1, high=max_data_point, size=(10,)) #
+# print(dummy_bids)
 
 # dummy_bool_auction_results = np.random.rand((10)) > 0.5
-#print(dummy_bool_auction_results)
+# print(dummy_bool_auction_results)
 
 
 # cls = SGDClassifier(loss='log')
