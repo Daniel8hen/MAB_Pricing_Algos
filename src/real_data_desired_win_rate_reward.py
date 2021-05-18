@@ -171,7 +171,7 @@ class BiddingStrategy():
             regret_arr.append(np.abs(b - auction_bid))  # log regret: ABS(bid - constant, which is the "win price by default")
             self.discount(discount_perc)  # discount
             r = self.reward(bid_price=b, won=win, context=[1])  # Generate reward per auction fin.
-        return regret_arr, np.mean(np.array(regret_arr))
+        return np.mean(np.array(regret_arr))
 
     def learn_priors(self, df, prior_weight=1):
         """ This method will calculate priors per each bin in self"""
