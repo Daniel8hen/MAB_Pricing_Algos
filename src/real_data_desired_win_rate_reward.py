@@ -78,6 +78,10 @@ class BiddingStrategy():
 
     def parameters(self, return_type=None):
         """BetaBernoulli based - parameters of the model: alpha + beta"""
+        if return_type=="T":
+            return {price: model.T  for price, model in self.bid_model.items()}
+        if return_type=="F":
+            return {price: model.F  for price, model in self.bid_model.items()}
         return {price: model.T / (model.T + model.F) for price, model in self.bid_model.items()}
 
     def bid(self, context):
