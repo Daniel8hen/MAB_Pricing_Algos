@@ -177,43 +177,16 @@ class BiddingStrategy():
         """ This method will calculate priors per each bin in self"""
         last_T = 1
         last_F = 1
+        min_bin = list(self.bid_model.keys())[0]
         for bin in reversed(list(self.bid_model.keys())):
-            ds = df[(df["bidPrice"]>bin*0.9) & (df["bidPrice"]<bin*1.1)]["hasWon"].value_counts(normalize=True).to_dict()
+            l = min(bin-min_bin, 0.9*bin)
+            u = max(bin + min_bin, 1.1 * bin)
+            ds = df[(df["bidPrice"]>=l) & (df["bidPrice"]<=u)]["hasWon"].value_counts(normalize=True).to_dict()
             T = ds.get(True, last_T)
             F = ds.get(False, last_F)
             self.bid_model[bin].prior_T = T*prior_weight
             self.bid_model[bin].prior_F = F*prior_weight
             last_T, last_F = T, F
-
-
-
-
-
-#       def specific_reward_function(self, bandit_price, bid_price, won):
-#         """This method will update per each bandit its reward based on similiarity logic (how close were they to win / lose)"""
-#           # TODO: This should be decided
-#         diff = bid_price - bandit_price
-#         if won:
-#           if diff == 0: # we won in that price!
-#             return 70
-#           elif diff > 0 and diff <= 1:
-#             return 30
-#           elif diff > 0 and diff <= 2:
-#             return 10
-#           elif diff < -3:
-#             return -3
-#           else:
-#             return 0
-
-#         else: # lose
-#             if diff > 5:
-#               return -1
-#             elif diff < 0 and diff >= -2:
-#               return 1
-#             else:
-#               return 0
-
-# COMMAND ----------
 
 
 # Main
