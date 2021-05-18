@@ -10,7 +10,6 @@ import random
 class ProbabilityModel():
     def __init__(self):
         self.class_prior = [0.5, 0.5]  ### class_prior represents behavior without any data - [T, F] for True, False representation, should always sum to 1 when initiatlizaing
-        # TODO: can be = null (not used)
 
     def predict_proba(X):  # Sample
         raise NotImplementedError("not implemented")
@@ -79,11 +78,6 @@ class BiddingStrategy():
 
     def parameters(self, return_type=None):
         """BetaBernoulli based - parameters of the model: alpha + beta"""
-        """TODO: Generalize for general models"""
-        if return_type=="T":
-            return {price: model.T for price, model in self.bid_model.items()}
-        elif return_type=="F":
-            return {price: model.F for price, model in self.bid_model.items()}
         return {price: model.T / (model.T + model.F) for price, model in self.bid_model.items()}
 
     def bid(self, context):
@@ -94,7 +88,8 @@ class BiddingStrategy():
 
         assert len(probabilities) == len(self.bid_model.keys())
 
-        n_samples = 3  # Aggregation strategy
+        # Aggregation strategy
+        n_samples = 11
         bid_price = np.random.choice(a=list(self.bid_model.keys()), p=probabilities, size=n_samples).mean()
         # bid price is based on 3 sampling average from the probabilities model
 
@@ -169,7 +164,7 @@ class BiddingStrategy():
 
         for i, row in df.iterrows():
             b = self.bid([i])  # provide a bid
-            # b = random.random()
+            # b = 0.4
             auction_bid = row['bidPrice']
             win = b > auction_bid
 
@@ -177,6 +172,22 @@ class BiddingStrategy():
             self.discount(discount_perc)  # discount
             r = self.reward(bid_price=b, won=win, context=[1])  # Generate reward per auction fin.
         return regret_arr, np.mean(np.array(regret_arr))
+
+    def learn_priors(self, df, prior_weight=1):
+        """ This method will calculate priors per each bin in self"""
+        last_T = 1
+        last_F = 1
+        for bin in reversed(list(self.bid_model.keys())):
+            ds = df[(df["bidPrice"]>bin*0.9) & (df["bidPrice"]<bin*1.1)]["hasWon"].value_counts(normalize=True).to_dict()
+            T = ds.get(True, last_T)
+            F = ds.get(False, last_F)
+            self.bid_model[bin].prior_T = T*prior_weight
+            self.bid_model[bin].prior_F = F*prior_weight
+            last_T, last_F = T, F
+
+
+
+
 
 #       def specific_reward_function(self, bandit_price, bid_price, won):
 #         """This method will update per each bandit its reward based on similiarity logic (how close were they to win / lose)"""
