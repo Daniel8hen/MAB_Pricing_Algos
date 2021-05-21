@@ -14,7 +14,7 @@ class decision_function_from_proba:
         return self.model
 
 class TemporalBagging(BaggingClassifier):
-    def __init__(self, base_classifier, n_estimators, **kwargs)
+    def __init__(self, base_classifier, n_estimators, **kwargs):
         super().__init__(base_classifier, n_estimators, **kwargs)
         self.current_index = 0
     def partial_fit(self, X, y):
