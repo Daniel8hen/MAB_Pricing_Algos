@@ -8,5 +8,5 @@ class decision_function_from_proba:
         def new_f(this, X):
             proba=f(this.predict_proba(X))
             return -np.log(proba)
-        self.model.decision_function=MethodType(self.model,new_f)
+        self.model.decision_function=MethodType(new_f, self.model)
         return self.model
