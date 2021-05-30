@@ -8,6 +8,7 @@ __pycache__/
 # CSV
 *.csv
 
+*data*.csv
 # idea PyCharm
 .idea/
 
