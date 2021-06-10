@@ -14,28 +14,25 @@ import pandas as pd
 # See: https://scikit-learn.org/0.15/modules/scaling_strategies.html
 from sklearn.linear_model import SGDClassifier, PassiveAggressiveClassifier, Perceptron
 from sklearn.naive_bayes import MultinomialNB, BernoulliNB
-sys.path.append("")
+sys.path.append("../src")
 
 # get_ipython().run_line_magic('matplotlib', 'inline')
+from wrappers import *
 
 
 # In[2]:
 
 
-from wrappers import decision_function_from_proba
-
-
-# In[3]:
-
+desired_win_rate=0.33
 
 df = pd.read_csv("../data/data.csv")
 
-df = df.sample(frac=0.02)
+df = df.query("placementType=='banner' and bidPrice<2 and bidPrice>0.1").sample(frac=0.02)
 
 
 # # Read data & preprocess
 
-# In[5]:
+# In[3]:
 
 
 def keep_values_by_min_freq(df, col, freq=0.9,other="OTHER"):
@@ -53,14 +50,14 @@ def keep_values_by_min_freq(df, col, freq=0.9,other="OTHER"):
     return df
 
 
-# In[6]:
+# In[4]:
 
 
 def preprocess(df):
     df = df.drop("sessionId", axis=1)
     df["eventTimestamp"] = pd.to_datetime(df["eventTimestamp"]*1_000_000)
-    df["day_of_week"]=df["eventTimestamp"].dt.weekday.astype("category")
-    df["time_of_day"]=df["eventTimestamp"].dt.hour.astype("category")
+#     df["day_of_week"]=df["eventTimestamp"].dt.weekday.astype("category")
+#     df["time_of_day"]=df["eventTimestamp"].dt.hour.astype("category")
     df.sort_values(by='eventTimestamp', inplace=True)    
     df = df.drop("eventTimestamp", axis=1)
     for col, dtype in df.dtypes.iteritems():
@@ -69,26 +66,37 @@ def preprocess(df):
     
     df = keep_values_by_min_freq(df, 'adNetworkId')
     df = keep_values_by_min_freq(df, 'userTrackingAuth')
-    
     # a, r, X for models
-    a = df["bidPrice"].round(2)
+    df["arms"] = df["bidPrice"].round(2)
+    arms = sorted(list(df["arms"].unique()))
+    # Add the logic of: "If $5 won, then $6 would have won as well" (also for loss)
+    df["arms"] = df.apply(lambda row: [a for a in arms if a>=row["arms"]] if row["hasWon"] else
+                          [a for a in arms if a<=row["arms"]],axis=1)
+    df = df.explode("arms")
+    arm_dict = {a:i for i, a in enumerate(arms)}
+    a = df["arms"].map(arm_dict)
     r = df["hasWon"]
-    df = df.drop(["bidPrice", "hasWon", "bundleId", "advertisedBundle"] ,axis=1)
+    df = df.drop(["bidPrice", "hasWon", "arms", "advertisedBundle"] ,axis=1)
     X = pd.get_dummies(df)
-    
-    return X, a, r
+    return arm_dict, X, a, r
 
-def preprocess_only_one_feature(df):
+def preprocess_only_one_feature(df, feature='deviceOs'):
     # preprocess
-    df = df[['bidPrice', 'placementType', 'hasWon']]
+    df = df[['bidPrice', 'hasWon', feature]]
+    df["arms"] = df["bidPrice"].round(1)
+    arms = sorted(list(df["arms"].unique()))
+    # Add the logic of: "If $5 won, then $6 would have won as well" (also for loss)
+    df["arms"] = df.apply(lambda row: [a for a in arms if a>=row["arms"]] if row["hasWon"] else
+                          [a for a in arms if a<=row["arms"]],axis=1)
+    df = df.explode("arms")
     
-    # a, r, X for models
-    a = df["bidPrice"].round(0)
+    arm_dict = {a:i for i, a in enumerate(arms)}
+    a = df["arms"].map(arm_dict)
     r = df["hasWon"]
-    df = df.drop(["bidPrice", "hasWon"] ,axis=1)
+    df = df.drop(["bidPrice", "hasWon", "arms"] ,axis=1)
     X = pd.get_dummies(df)
     
-    return X, a, r
+    return arm_dict, X, a, r
 
 
 # sample
@@ -99,37 +107,77 @@ def preprocess_only_one_feature(df):
 # df = df.query("placementType=='banner' and bidPrice<1.01").drop("placementType",axis=1)
 df.drop("placementType", axis=1)
 
-# X, a, r = preprocess(df)
-X, a, r = preprocess_only_one_feature(df)
-X.columns
+arm_dict, X, a, r = preprocess(df)
+# df["deviceOs_size"] = df["deviceOs"] + '_' + df["size"]
+# arm_dict, X, a, r = preprocess_only_one_feature(df, 'deviceOs_size')
 
 
 # # Contextual bandits
 
-# In[9]:
+# In[5]:
 
 
-bids = sorted(set(a))
-n_arms = len(bids)
-base_model = SGDClassifier(loss='log')
+class ModelWithDesiredWinRate(BernoulliNB):
+    def predict_proba(self, X):
+        probs = super().predict_proba(X)[:, 1] # predict proba as of any predict_proba model classifier
+        y = 1 / np.abs(probs - desired_win_rate + 0.0001) # Numerical stability
+        c = 1e-3
+        y = 1 - np.exp(-y*c) # Normalize
+        ret = np.vstack((1-y, y)).T
 
-desired_win_rate=0.1
-# @decision_function_from_proba(base_model) ### TODO: Go over code
-# def normalize_proba(proba):
-#     return 1/np.abs(proba-desired_win_rate + 0.0001)
+        return ret
 
-# logreg_ts = cb.BootstrappedTS(clone(base_model), n_arms, batch_train=True)
-# logreg_ucb = cb.BootstrappedUCB(clone(base_model), n_arms, batch_train=True)
-# logreg_eg = cb.EpsilonGreedy(clone(base_model), n_arms, batch_train=True)
 
+# In[6]:
+
+
+class SGDClassifierWithNormalization(SGDClassifier):
+    def predict_proba(self, X):
+        probs = super().predict_proba(X)[:, 1] # predict proba as of any predict_proba model classifier
+        y = 1 / np.abs(probs - desired_win_rate + 0.0001) # Numerical stability
+        c = 1e-3
+        y = 1 - np.exp(-y*c) # Normalize
+        ret = np.vstack((1-y, y)).T
+
+        return ret
+
+
+# In[7]:
+
+
+n_arms = len(arm_dict)
+bids = {v:k for k,v in arm_dict.items()}
+base_model = SGDClassifierWithNormalization(loss='log')
+# base_model = ModelWithDesiredWinRate()
+# base_model = BernoulliNB()
 logreg_sg = cb.SeparateClassifiers(clone(base_model), n_arms, batch_train=True)
 
 
-# In[24]:
+# In[ ]:
 
 
-def simulate(model, X, a , r, chunk = 100, limit=100):
+logreg_sg.partial_fit(X,a,r)
+print(type(logreg_sg._oracles.algos[0]))
+assert type(base_model) == type(logreg_sg._oracles.algos[0])
+
+# model.partial_fit(XX, aa, rr)
+# [m.coef_ for m in model._oracles.algos]
+
+
+# In[ ]:
+
+
+# logreg_sg.fit(X,a,r)
+# [m.coef_ for m in logreg_sg._oracles.algos]
+
+
+# In[ ]:
+
+
+def simulate(model, X, a , r, chunk = 100, limit=500):
     X,a,r=map(clone,[X,a,r]) # copy the existing data so we won't change it
+    
+    ### TODO: Update reward with neighbor arms
     
     train_X, train_a, train_r = X.iloc[:chunk,:], a[:chunk], r[:chunk] 
     # split the data into train
@@ -155,7 +203,7 @@ def simulate(model, X, a , r, chunk = 100, limit=100):
 
 # # plot
 
-# In[25]:
+# In[ ]:
 
 
 regret = simulate(logreg_sg, X, a, r)
@@ -167,25 +215,44 @@ plt.xlabel("iterations")
 # In[ ]:
 
 
-# logreg_sg.base
+plt.hist(regret)
 
 
-# In[14]:
+# In[ ]:
 
 
-# regret = simulate(logreg_ts, X,a,r)
-# plt.plot(np.arange(len(regret)), regret)
-# regret = simulate(logreg_ucb, X,a,r)
-# plt.plot(np.arange(len(regret)), regret)
-# regret = simulate(logreg_eg, X,a,r)
-# plt.plot(np.arange(len(regret)), regret)
-# plt.ylabel("regret")
-# plt.xlabel("iterations")
+print(X.columns)
+pred = logreg_sg.predict(np.eye(len(X.columns)), output_score=True)
+pred["bid"] = [bids[y] for y in pred['choice']]
+pred
 
 
+# In[ ]:
 
-# Directions for next meeting:
-# 1. Uri will investigate the behavior on small data + base "dummy" model
-# 2. Temporal Bagging - interesting to try, Uri and Daniel next meeting (like RF - partial fit is last X data points only, then you "forget" the past and trains on the current) - queue style
-# 3. Non-contextual 
+
+df.groupby("deviceOs").agg({"bidPrice": np.mean, "sessionId": 'count'})
+
+
+# In[ ]:
+
+
+df.pivot_table(values="bidPrice", index="deviceOs", columns="hasWon", aggfunc='median')
+
+
+# In[ ]:
+
+
+df.pivot_table(values="bidPrice", index="size", columns="hasWon", aggfunc='median')
+
+
+# In[ ]:
+
+
+df.query('hasWon==1').pivot_table(values="bidPrice", index="deviceOs", columns="size", aggfunc='median')
+
+
+# In[ ]:
+
+
+df['deviceOs_size'].value_counts()
 
